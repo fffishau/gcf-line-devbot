@@ -13,7 +13,6 @@ exports.errToPlainObj = (() => {
     'info',
     'message',
     'name',
-    'originalError.response.data',
     'path',
     'port',
     'reason',
@@ -26,38 +25,21 @@ exports.errToPlainObj = (() => {
     'statusMessage',
     'syscall',
   ]
-  return err => _.transform(ERROR_KEYS, (json, k) => {
-    if (_.hasIn(err, k)) _.set(json, k, _.get(err, k))
-  }, {})
+  return err => _.pick(err, ERROR_KEYS)
 })()
 
-const GCP_PROJECT = exports.getenv('GCP_PROJECT', 'taichunmin')
-exports.getGcfLogger = req => {
-  const baseFields = {}
-
-  // Add log correlation to nest all log messages beneath request log in Log Viewer.
-  const traceHeader = _.invoke(req, 'header', 'X-Cloud-Trace-Context')
-  if (traceHeader) {
-    baseFields['logging.googleapis.com/trace'] = `projects/${GCP_PROJECT}/traces/${_.first(traceHeader.split('/'))}`
+exports.log = (() => {
+  const LOG_SEVERITY = ['DEFAULT', 'DEBUG', 'INFO', 'NOTICE', 'WARNING', 'ERROR', 'CRITICAL', 'ALERT', 'EMERGENCY']
+  return (...args) => {
+    let severity = 'DEFAULT'
+    if (args.length > 1 && _.includes(LOG_SEVERITY, _.toUpper(args[0]))) severity = _.toUpper(args.shift())
+    _.each(args, arg => {
+      if (_.isString(arg)) arg = { message: arg }
+      if (arg instanceof Error) arg = exports.errToPlainObj(arg)
+      console.log(JSON.stringify({ severity, ...arg }))
+    })
   }
-
-  const baseFn = defaults => (...args) => _.map(args, arg => {
-    if (_.isString(arg)) arg = { message: arg }
-    if (arg instanceof Error) arg = exports.errToPlainObj(arg)
-    console.log(JSON.stringify({
-      ...defaults,
-      ...arg,
-    }))
-  })
-
-  return {
-    log: baseFn({ ...baseFields, severity: 'DEFAULT' }),
-    debug: baseFn({ ...baseFields, severity: 'DEBUG' }),
-    info: baseFn({ ...baseFields, severity: 'INFO' }),
-    warn: baseFn({ ...baseFields, severity: 'WARNING' }),
-    error: baseFn({ ...baseFields, severity: 'ERROR' }),
-  }
-}
+})()
 
 exports.middlewareCompose = middleware => {
   // 型態檢查
